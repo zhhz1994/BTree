@@ -8,12 +8,12 @@ class BTree{
     int m = ceil(M/2); 
 public:
     int keyNum = 0;
-    T keys[M-1+1];
+    T keys[M];
     BTree *parent = NULL;
-    BTree *children[M-1+2] = {NULL};
+    BTree *children[M+1] = {NULL};
     BTree(){};
     BTree(T *start, int num){
-        if (num <= M-1+1){
+        if (num <= M){
             copy(start, start + num, keys);
             keyNum = num;
         }
@@ -21,24 +21,56 @@ public:
             cout<<"Invalid number of elements."<<endl;
     }
     int isLeaf(){
-        for (int i=0; i<M-1+1; i++){
+        for (int i=0; i<M; i++){
             if (children[i])
                 return 0;
         }
         return 1;
     }
     bool isOverflow(){
-        return keyNum >= M-1+1;
+        return keyNum >= M;
     }
     void setChild(BTree *child, int num){
         children[num] = child;
-        child->parent = this;
+        if (child){
+            child->parent = this;
+        }
+    }
+    void passChildren(int begin, int end, BTree<T> *newParent, int newPosition){
+        for (int i=begin; i<end && children[i] != NULL; i++){
+            if (newPosition > M){
+                cout<<"newPosition > M"<<endl;
+                break;
+            }
+            newParent->setChild(children[i], newPosition);
+            children[i] = NULL;
+            newPosition++;
+        }
+    }
+    void transfer(int begin, int end, BTree<T> *newNode, int newPosition){
+        int i;
+        for (i=begin; i<end; i++){
+            if (i > M || newPosition > M){
+                cout<<"index > M during transfer"<<endl;
+                break;
+            }
+            newNode->keys[newPosition] = this->keys[i];
+            newNode->setChild(children[i], newPosition);
+            children[i] = NULL;
+            newPosition ++;
+        }
+        newNode->setChild(children[i], newPosition);
+        children[i] = NULL;
+        this->keyNum -= (end - begin);
+        newNode->keyNum += (end - begin);
     }
     void printNode(){
         cout<<"(";
-        for (int i=0; i<keyNum; i++)
+        int i;
+        for (i=0; i<keyNum; i++)
             cout<<keys[i]<<", ";
-        cout<<"\b\b) ";
+        if (i) cout<<"\b\b";
+        cout<<") ";
     }
     void printBTree(){
         printNode();
@@ -52,8 +84,6 @@ public:
         for (int i=0; i < M+1; i++)
             if (children[i]!=NULL){
                 children[i]->printNode();
-//                 if (children[i]->parent != this)
-//                     cout<<" has wrong parent "<<children[i]->parent<<" instead of "<<this;
             }
         cout<<endl;
         for (int i=0; i < M+1; i++){
@@ -69,13 +99,11 @@ public:
 
     BTree<T> *findInsertChild(T data){
         int i;
-        for (i=0; i < keyNum; i++)
-            if (keys[i] > data)
-                break;
+        for (i=0; i < keyNum && keys[i] < data; i++);
         return children[i];
     }
     void split(){
-        if (keyNum != M){
+        if (keyNum < M){
             cout<<"No need to split."<<endl;
             return;
         }
@@ -85,12 +113,9 @@ public:
             parent->keys[0] = keys[m-1];
             parent->keyNum = 1;
             
-            parent->setChild(new BTree<T>(keys+m, M-m), 1);
-            for (int i=m; i < M+1 && children[i]!=NULL; i++){
-                parent->children[1]->setChild(children[i], i-m);
-                children[i] = NULL;
-            }
-            keyNum = m-1;
+            keyNum--;
+            parent->setChild(new BTree<T>, 1);
+            transfer(m, M, parent->children[1], 0);
         }
         else if (parent->keyNum <= M-1){
             int i;
@@ -101,23 +126,18 @@ public:
             parent->keys[i+1] = keys[m-1];
             parent->keyNum += 1;
             
-            parent->setChild(new BTree<T>(keys+m, M-m), i+2);
-            for (int j=m; j < M+1 && children[j]!=NULL; j++){
-                parent->children[i+2]->setChild(children[j], j-m);
-                children[j] = NULL;
-            }
-            keyNum = m-1;
+            keyNum--;
+            parent->setChild(new BTree<T>, i+2);
+            transfer(m, M, parent->children[i+2], 0);
             if (parent->isOverflow()){
                 parent->split();
             }
         }
     }
+    void merge(int num){
+        
+    }
     BTree *insert(T data){
-        if (!this->parent && this->keyNum == 0){
-            this->keys[0] = data;
-            this->keyNum += 1;
-            return this;
-        }
         BTree<T> *p;
         for (p=this; !p->isLeaf(); p = p->findInsertChild(data));
         if (p->keyNum > M-1){
@@ -125,19 +145,88 @@ public:
             return NULL;
         }
         int i;
-        for (i=p->keyNum-1; i>=0 && p->keys[i] > data; i--)
+        for (i=p->keyNum-1; i>=0 && p->keys[i] > data; i--){
             p->keys[i+1] = p->keys[i];
+        }
         p->keys[i+1] = data;
         p->keyNum += 1;
-        if (p->isOverflow())
+        if (p->isOverflow()){
             p->split();
-        
+        }
         for (p=this; p->parent != NULL; p = p->parent);
         return p;
     }
+    
+    BTree<T> *leftRotate(int num){
+//         cout<<"left rotating"<<endl;
+        if (isLeaf()){
+            cout<<"Can not rotate a leaf."<<endl;
+            return this;
+        }
+        BTree<T> *leftChild = children[num];
+        BTree<T> *rightChild = children[num+1];
+        
+        int n = leftChild->keyNum;
+        leftChild->keys[n] = keys[num];
+        leftChild->keyNum += 1;
+        leftChild->setChild(rightChild->children[0], n+1);
+        
+        keys[num] = rightChild->keys[0];
+        rightChild->keyNum -= 1;
+        int i;
+        for (i=0; i < rightChild->keyNum; i++){
+            rightChild->keys[i] = rightChild->keys[i+1];
+            rightChild->setChild(rightChild->children[i+1], i);
+        }
+        rightChild->setChild(rightChild->children[i+1], i);
+        rightChild->children[i+1] = NULL;
+        return leftChild;
+    }
+    BTree<T> *rightRotate(int num){
+//         cout<<"right rotating"<<endl;
+        if (isLeaf()){
+            cout<<"Can not rotate a leaf."<<endl;
+            return this;
+        }
+        BTree<T> *leftChild = children[num];
+        BTree<T> *rightChild = children[num+1];
+        int n = rightChild->keyNum;
+        rightChild->setChild(rightChild->children[n], n+1);
+        for (int i = n-1; i>=0; i--){
+            rightChild->keys[i+1] = rightChild->keys[i];
+            rightChild->setChild(rightChild->children[i], i+1);
+        }
+        rightChild->keys[0] = keys[num];
+        leftChild->passChildren(leftChild->keyNum, leftChild->keyNum+1, rightChild, 0);
+        rightChild->keyNum += 1;
+        
+        keys[num] = leftChild->keys[leftChild->keyNum-1];
+        leftChild->keyNum -= 1;        
+        return rightChild;
+    }
+    void deleteNode(int num){
+        int i = num;
+        BTree<T> *leftChild = children[num];
+        BTree<T> *rightChild = children[num+1];
+        BTree<T> *p = this;
+        while(!p->isLeaf()){
+            if (rightChild->keyNum-1 >= m-1 && leftChild->keyNum+1 <= M-1){
+                p = p->leftRotate(i);
+                i = p->keyNum-1;
+            }
+            else{
+                p = p->rightRotate(i);
+                i = 0;
+            }
+        }
+        for (int j=i; j < p->keyNum-1; j++){
+            p->keys[j] = p->keys[j+1];
+        }
+        p->keyNum -= 1;
+    }
     ~BTree(){
         if (!this->isLeaf()){
-            for (int i=0; i < M-1+2; i++)
+            for (int i=0; i < M+1; i++)
                 if (children[i])
                     delete(children[i]);
         }
@@ -150,11 +239,26 @@ int main(){
         rt = rt->insert(i);
     }
     rt->printBTree();
-    delete rt;
-    rt = new BTree<int>;
+    BTree<int> *p;
+//     cout<<"After rotation:"<<endl;
+//     p=rt->leftRotate(0);
+//     rt->printBTree();
+//     p=p->rightRotate(1);
+//     rt->printBTree();
     
+    cout<<"After deletion:"<<endl;
+    rt->deleteNode(1);
+    rt->printBTree();
+
+    delete rt;
+    
+    rt = new BTree<int>;
     for (int i=20; i>=0; i--){
         rt = rt->insert(i);
     }
+    rt->printBTree();
+
+    cout<<"After deletion:"<<endl;
+    rt->deleteNode(0);
     rt->printBTree();
 }
